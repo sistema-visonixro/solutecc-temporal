@@ -273,10 +273,10 @@ export async function generateFacturaHTML(
           Boolean(i.producto && i.producto.aplica_impuesto_turistico) ||
           Boolean(i.aplica_impuesto_turistico);
         const mainRate = aplica18
-          ? (params.tax18Rate ?? params.tax18 ?? 0)
-          : (params.taxRate ?? params.tax ?? 0);
+          ? Number(params.tax18Rate ?? params.tax18 ?? 0.18)
+          : Number(params.taxRate ?? params.tax ?? 0.15);
         const turRate = aplicaTur
-          ? (params.taxTouristRate ?? params.taxTourist ?? 0)
+          ? Number(params.taxTouristRate ?? params.taxTourist ?? 0.04)
           : 0;
         const combined = (Number(mainRate) || 0) + (Number(turRate) || 0);
 
@@ -443,6 +443,14 @@ export async function generateFacturaHTML(
   }
 
   // ─── LÓGICA DE FACTURA ───
+  let facturaGravadoCalculado = 0;
+  let facturaExentoCalculado = 0;
+  let facturaDescuentoCalculado = 0;
+  let facturaImpuesto15Calculado = 0;
+  let facturaImpuesto18Calculado = 0;
+  let facturaImpTouristCalculado = 0;
+  let facturaTotalCalculado = 0;
+
   const facturaItems = carrito
     .map((i: any) => {
       const desc = String(
@@ -467,17 +475,36 @@ export async function generateFacturaHTML(
         Boolean(i.producto && i.producto.aplica_impuesto_turistico) ||
         Boolean(i.aplica_impuesto_turistico);
       const mainRate = aplica18
-        ? (params.tax18Rate ?? params.tax18 ?? 0)
-        : (params.taxRate ?? params.tax ?? 0);
+        ? Number(params.tax18Rate ?? params.tax18 ?? 0.18)
+        : Number(params.taxRate ?? params.tax ?? 0.15);
       const turRate = aplicaTur
-        ? (params.taxTouristRate ?? params.taxTourist ?? 0)
+        ? Number(params.taxTouristRate ?? params.taxTourist ?? 0.04)
         : 0;
       const combined = (Number(mainRate) || 0) + (Number(turRate) || 0);
 
       let precioUnitario = precioBrutoUnit;
       if (!exento && combined > 0)
         precioUnitario = precioBrutoUnit / (1 + combined);
-      const subtotalLinea = precioUnitario * cant;
+      const baseLinea = precioUnitario * cant;
+      const pct = Number(i.descuento || 0);
+      const descuentoMonto = (baseLinea * pct) / 100;
+      const subtotalLinea = baseLinea - descuentoMonto;
+
+      let impuesto15Linea = 0;
+      let impuesto18Linea = 0;
+      let impuestoTourLinea = 0;
+      if (!exento) {
+        if (aplica18) {
+          impuesto18Linea = subtotalLinea * Number(mainRate || 0);
+        } else {
+          impuesto15Linea = subtotalLinea * Number(mainRate || 0);
+        }
+        if (aplicaTur) {
+          impuestoTourLinea = subtotalLinea * Number(turRate || 0);
+        }
+      }
+      const totalLinea =
+        subtotalLinea + impuesto15Linea + impuesto18Linea + impuestoTourLinea;
       const sku =
         (i.producto && i.producto.sku) ||
         i.sku ||
@@ -486,8 +513,17 @@ export async function generateFacturaHTML(
         (i.producto && i.producto.id) ||
         "";
 
-      const pct = Number(i.descuento || 0);
-      const descuentoMonto = precioBrutoUnit * (pct / 100) * cant;
+      if (exento) {
+        facturaExentoCalculado += baseLinea;
+      } else {
+        facturaGravadoCalculado += baseLinea;
+      }
+      facturaDescuentoCalculado += descuentoMonto;
+      facturaImpuesto15Calculado += impuesto15Linea;
+      facturaImpuesto18Calculado += impuesto18Linea;
+      facturaImpTouristCalculado += impuestoTourLinea;
+      facturaTotalCalculado += totalLinea;
+
       return `<tr>
           <td>${sku}</td>
           <td>${desc}</td>
@@ -498,6 +534,18 @@ export async function generateFacturaHTML(
         </tr>`;
     })
     .join("\n");
+
+  const facturaGravado = Number(params.gravado ?? facturaGravadoCalculado);
+  const facturaExento = Number(params.exento ?? facturaExentoCalculado);
+  const facturaDSC = Number(params.descuento ?? facturaDescuentoCalculado);
+  const facturaImpuesto15 = Number(
+    params.isvTotal ?? facturaImpuesto15Calculado,
+  );
+  const facturaISV18 = Number(params.imp18Total ?? facturaImpuesto18Calculado);
+  const facturaImpTourist = Number(
+    params.impTouristTotal ?? facturaImpTouristCalculado,
+  );
+  const facturaTotal = Number(params.total ?? facturaTotalCalculado);
 
   const logoHtmlFactura = logoSrc
     ? `<img src="${logoSrc}" alt="Logo" style="max-width:100px; max-height:60px; object-fit:contain;" />`
@@ -657,11 +705,12 @@ export async function generateFacturaHTML(
         <table class="items-table">
             <thead>
                 <tr>
-                    <th style="width: 18%;">Código / SKU</th>
-                    <th style="width: 47%;">Descripción</th>
+                    <th style="width: 16%;">Código / SKU</th>
+                    <th style="width: 40%;">Descripción</th>
                     <th class="text-right" style="width: 12%;">Precio Unit.</th>
                     <th class="text-center" style="width: 8%;">Cant.</th>
-                    <th class="text-right" style="width: 15%;">Total</th>
+                    <th class="text-right" style="width: 12%;">Desc.</th>
+                    <th class="text-right" style="width: 12%;">Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -694,12 +743,13 @@ export async function generateFacturaHTML(
 
         <div class="bottom-right">
             <table class="totals-table">
-                <tr><td>SUB-TOTAL GRAVADO:</td><td>L</td><td class="text-right">${fmtMoney(Gravado)}</td></tr>
-                <tr><td>SUB-TOTAL EXENTO:</td><td>L</td><td class="text-right">${fmtMoney(Exento)}</td></tr>
-                <tr><td>DESCUENTO:</td><td>L</td><td class="text-right">${fmtMoney(DSC)}</td></tr>
-                <tr><td>ISV 15%:</td><td>L</td><td class="text-right">${fmtMoney(impuesto)}</td></tr>
-                ${Number(ISV18) > 0 ? `<tr><td>ISV 18%:</td><td>L</td><td class="text-right">${fmtMoney(ISV18)}</td></tr>` : ""}
-                <tr><td>TOTAL A PAGAR:</td><td>L</td><td class="text-right">${fmtMoney(ft)}</td></tr>
+                <tr><td>SUB-TOTAL GRAVADO:</td><td>L</td><td class="text-right">${fmtMoney(facturaGravado)}</td></tr>
+                <tr><td>SUB-TOTAL EXENTO:</td><td>L</td><td class="text-right">${fmtMoney(facturaExento)}</td></tr>
+                <tr><td>DESCUENTO:</td><td>L</td><td class="text-right">${fmtMoney(facturaDSC)}</td></tr>
+                <tr><td>ISV 15%:</td><td>L</td><td class="text-right">${fmtMoney(facturaImpuesto15)}</td></tr>
+                ${Number(facturaISV18) > 0 ? `<tr><td>ISV 18%:</td><td>L</td><td class="text-right">${fmtMoney(facturaISV18)}</td></tr>` : ""}
+                ${Number(facturaImpTourist) > 0 ? `<tr><td>ISV Turístico:</td><td>L</td><td class="text-right">${fmtMoney(facturaImpTourist)}</td></tr>` : ""}
+                <tr><td>TOTAL A PAGAR:</td><td>L</td><td class="text-right">${fmtMoney(facturaTotal)}</td></tr>
             </table>
         </div>
     </div>

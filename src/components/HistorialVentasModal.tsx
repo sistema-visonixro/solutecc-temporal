@@ -115,6 +115,19 @@ export default function HistorialVentasModal({
           "";
         const sku =
           d.sku || d.codigo || inventarioMap[String(d.producto_id)]?.sku || "";
+        const precioUnitarioAfterDiscount = Number(
+          d.precio_unitario ?? d.precio ?? 0,
+        );
+        const descuentoAbs = Number(d.descuento || 0);
+        const cantidad = Number(d.cantidad || 1);
+        const descuentoUnitario = cantidad > 0 ? descuentoAbs / cantidad : 0;
+        const basePrecioUnitario =
+          precioUnitarioAfterDiscount + descuentoUnitario;
+        const descuentoPct =
+          basePrecioUnitario > 0
+            ? (descuentoUnitario / basePrecioUnitario) * 100
+            : 0;
+
         return {
           producto: {
             id: d.producto_id || d.id,
@@ -122,8 +135,8 @@ export default function HistorialVentasModal({
             sku,
             codigo: d.codigo || sku,
             producto_id: d.producto_id,
-            precio: d.precio_unitario,
-            precio_unitario: d.precio_unitario,
+            precio: basePrecioUnitario,
+            precio_unitario: basePrecioUnitario,
             exento: d.exento,
             aplica_impuesto_18: d.aplica_impuesto_18,
             aplica_impuesto_turistico: d.aplica_impuesto_turistico,
@@ -132,10 +145,10 @@ export default function HistorialVentasModal({
           codigo: d.codigo || sku,
           producto_id: d.producto_id || d.id,
           cantidad: d.cantidad,
-          precio_unitario: d.precio_unitario,
-          precio: d.precio_unitario,
+          precio_unitario: basePrecioUnitario,
+          precio: basePrecioUnitario,
           subtotal: d.subtotal,
-          descuento: d.descuento || 0,
+          descuento: descuentoPct,
           exento: d.exento,
           aplica_impuesto_18: d.aplica_impuesto_18,
           aplica_impuesto_turistico: d.aplica_impuesto_turistico,
@@ -152,6 +165,24 @@ export default function HistorialVentasModal({
         else if (tipo === "transferencia")
           transferencia += Number(p.monto || 0);
       }
+
+      const rawGravado = Number(venta.sub_gravado || 0);
+      const rawTaxRate =
+        rawGravado > 0 ? Number(venta.isv_15 || 0) / rawGravado : 0;
+      const rawTax18Rate =
+        rawGravado > 0 ? Number(venta.isv_18 || 0) / rawGravado : 0;
+      const rawTaxTouristRate =
+        rawGravado > 0
+          ? Number(venta.isv_4 || venta.isv4 || 0) / rawGravado
+          : 0;
+      const taxRate =
+        rawTaxRate >= 0.14 && rawTaxRate <= 0.16 ? rawTaxRate : 0.15;
+      const tax18Rate =
+        rawTax18Rate >= 0.17 && rawTax18Rate <= 0.19 ? rawTax18Rate : 0.18;
+      const taxTouristRate =
+        rawTaxTouristRate >= 0.035 && rawTaxTouristRate <= 0.045
+          ? rawTaxTouristRate
+          : 0.04;
 
       const html = await generateFacturaHTML(
         {
@@ -171,9 +202,12 @@ export default function HistorialVentasModal({
           isvTotal: Number(venta.isv_15 || 0),
           imp18Total: Number(venta.isv_18 || 0),
           total: Number(venta.total || 0),
-          gravado: Number(venta.sub_gravado || 0),
+          gravado: rawGravado,
           exento: Number(venta.sub_exento || 0),
           exonerado: Number(venta.sub_exonerado || 0),
+          taxRate,
+          tax18Rate,
+          taxTouristRate,
           pagos: {
             efectivo,
             tarjeta,

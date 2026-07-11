@@ -155,10 +155,10 @@ export async function generateCotizacionHTML(
         Boolean(i.producto && i.producto.aplica_impuesto_turistico) ||
         Boolean(i.aplica_impuesto_turistico);
       const mainRate = aplica18
-        ? (params.tax18Rate ?? params.tax18 ?? 0)
-        : (params.taxRate ?? params.tax ?? 0);
+        ? Number(params.tax18Rate ?? params.tax18 ?? 0.18)
+        : Number(params.taxRate ?? params.tax ?? 0.15);
       const turRate = aplicaTur
-        ? (params.taxTouristRate ?? params.taxTourist ?? 0)
+        ? Number(params.taxTouristRate ?? params.taxTourist ?? 0.04)
         : 0;
       const combined = (Number(mainRate) || 0) + (Number(turRate) || 0);
 
